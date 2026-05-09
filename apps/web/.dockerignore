@@ -1,0 +1,16 @@
+# Root .dockerignore — Áp dụng khi build context là root (web Dockerfile)
+node_modules/
+apps/api/node_modules/
+apps/web/node_modules/
+apps/api/coverage/
+apps/api/scratch/
+apps/web/playwright-report/
+apps/web/test-results/
+**/.env
+**/.env.*
+!**/.env.example
+.git/
+.gitignore
+docs/
+*.md
+!README.md

@@ -1,0 +1,11 @@
+{
+  "name": "@qlvpp/db",
+  "version": "4.0.0",
+  "description": "QLVPP — MySQL 8 schema, migrations, and seed data",
+  "private": true,
+  "scripts": {
+    "schema": "mysql -u ${DB_USER:-root} -p${DB_PASSWORD} ${DB_NAME:-qlvpp} < schema.sql",
+    "seed": "mysql -u ${DB_USER:-root} -p${DB_PASSWORD} ${DB_NAME:-qlvpp} < seeds/seed.sql",
+    "reset": "npm run schema && npm run seed"
+  }
+}

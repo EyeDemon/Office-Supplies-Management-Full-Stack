@@ -1,0 +1,43 @@
+{
+  "name": "qlvpp-monorepo",
+  "version": "4.0.0",
+  "description": "QLVPP — Quản Lý Văn Phòng Phẩm (ERP Inventory Management)",
+  "private": true,
+  "workspaces": [
+    "apps/api",
+    "apps/web",
+    "packages/db",
+    "packages/contracts"
+  ],
+  "scripts": {
+    "dev": "concurrently --names \"API,WEB\" --prefix-colors \"cyan,magenta\" \"npm run dev -w apps/api\" \"npm run dev -w apps/web\"",
+    "dev:api": "npm run dev -w apps/api",
+    "dev:web": "npm run dev -w apps/web",
+    "build": "npm run build -w apps/web",
+    "start": "npm run start -w apps/api",
+    "test": "npm run test -w apps/api",
+    "test:unit": "npm run test:unit -w apps/api",
+    "test:ci": "npm run test:ci -w apps/api",
+    "db:schema": "mysql -u root -p qlvpp < packages/db/schema.sql",
+    "db:seed": "mysql -u root -p qlvpp < packages/db/seeds/seed.sql",
+    "db:testdata": "mysql -u root -p qlvpp < packages/db/seeds/test_data.sql",
+    "db:reset": "npm run db:schema && npm run db:seed",
+    "db:migrate": "node scripts/migrate.js",
+    "db:migrate:status": "node scripts/migrate.js --status",
+    "db:backup": "bash scripts/db-backup.sh",
+    "docker:up": "docker compose up -d",
+    "docker:down": "docker compose down",
+    "docker:logs": "docker compose logs -f",
+    "docker:rebuild": "docker compose up -d --build",
+    "lint": "npm run lint -w apps/web"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "jest": "^30.4.1",
+    "supertest": "^7.2.2"
+  }
+}

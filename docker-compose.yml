@@ -1,0 +1,205 @@
+services:
+  # ── MySQL Database ───────────────────────────────────────────────
+  db:
+    image: mysql:8.0
+    container_name: qlvpp-db
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      MYSQL_DATABASE: qlvpp
+      MYSQL_USER: qlvpp_user
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+    volumes:
+      - qlvpp_db_data:/var/lib/mysql
+      # v4.0.0 Golden Schema — 39 tables, triggers, views, seed (no migration cruft)
+      - ./packages/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./packages/db/seeds/seed_v4.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: [ "CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Redis (Event Bus & Queues) ──────────────────────────────────
+  redis:
+    image: redis:7.0-alpine
+    container_name: qlvpp-redis
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 256M
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD}" ]
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Node.js API (apps/api/) ──────────────────────────────────────
+  api:
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: qlvpp-api
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 8080
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_NAME: qlvpp
+      DB_USER: qlvpp_user
+      DB_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
+      SESSION_SECRET: "${SESSION_SECRET:?ERROR: Set SESSION_SECRET in .env (min 32 chars)}"
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost}
+      EMAIL_MODE: ${EMAIL_MODE:-dev}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}
+      ADJUSTMENT_THRESHOLD: ${ADJUSTMENT_THRESHOLD:-100}
+    expose:
+      - "8080"
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:8080/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── React Frontend — Nginx (apps/web/) ──────────────────────────
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: qlvpp-web
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+    ports:
+      - "80:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "wget", "-qO-", "http://localhost:80/health" ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── DB Backup (Cron hàng ngày lúc 2:00 AM) ──────────────────────
+  # Lưu file vào named volume qlvpp_backups, giữ trong 7 ngày.
+  # Xem danh sách: docker run --rm -v qlvpp_backups:/b alpine ls /b
+  # Restore:       docker run --rm -v qlvpp_backups:/b -v $(pwd):/out alpine cp /b/<file>.sql.gz /out/
+  backup:
+    image: mysql:8.0
+    container_name: qlvpp-backup
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      MYSQL_HOST: db
+      MYSQL_PORT: "3306"
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
+      DB_NAME: qlvpp
+      BACKUP_DIR: /backups
+      RETENTION_DAYS: "7"
+    volumes:
+      - qlvpp_backups:/backups
+      - ./scripts/db-backup.sh:/db-backup.sh:ro
+    entrypoint: >
+      bash -c "
+        chmod +x /db-backup.sh &&
+        echo '0 2 * * * /db-backup.sh >> /backups/backup.log 2>&1' | crontab - &&
+        echo '[Backup] Đã đăng ký cron 02:00 AM hàng ngày.' &&
+        cron -f
+      "
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+  # ── Certbot / Let's Encrypt ───────────────────────────────────────
+  # Chạy một lần để lấy cert HTTPS:
+  #   DOMAIN=yourdomain.com CERTBOT_EMAIL=you@email.com \
+  #   docker compose --profile certbot run --rm certbot
+  # Sau đó: uncomment HTTPS section trong docker-compose và dùng nginx.https.conf
+  certbot:
+    image: certbot/certbot:latest
+    container_name: qlvpp-certbot
+    profiles: ["certbot"]
+    volumes:
+      - certbot_certs:/etc/letsencrypt
+      - certbot_www:/var/www/certbot
+    command: >
+      certonly --webroot
+      --webroot-path=/var/www/certbot
+      --email ${CERTBOT_EMAIL:-admin@example.com}
+      --agree-tos
+      --no-eff-email
+      -d ${DOMAIN:-yourdomain.com}
+
+volumes:
+  qlvpp_db_data:
+    driver: local
+  qlvpp_backups:
+    driver: local
+  certbot_certs:
+    driver: local
+  certbot_www:
+    driver: local
