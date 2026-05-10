@@ -39,6 +39,10 @@ jobs:
         working-directory: apps/api
         run: npm install
 
+      - name: Load database schema
+        run: |
+          mysql -h 127.0.0.1 -u root -proot_password qlvpp_test < packages/db/schema.sql
+
       - name: Run database migrations
         working-directory: apps/api
         run: node ../../packages/db/migrate.js
