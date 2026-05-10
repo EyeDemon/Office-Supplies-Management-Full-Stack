@@ -1017,7 +1017,7 @@ BEGIN
         WHERE product_id = NEW.product_id
     )
     WHERE id = NEW.product_id;
-END$$
+END;
 
 CREATE TRIGGER trg_ws_after_update
 AFTER UPDATE ON warehouse_stock
@@ -1037,7 +1037,7 @@ BEGIN
         )
         WHERE id = NEW.product_id;
     END IF;
-END$$
+END;
 
 CREATE TRIGGER trg_ws_after_delete
 AFTER DELETE ON warehouse_stock
@@ -1055,9 +1055,7 @@ BEGIN
         WHERE product_id = OLD.product_id
     )
     WHERE id = OLD.product_id;
-END$$
-
-DELIMITER ;
+END;
 
 
 -- ════════════════════════════════════════════════════════════════════
