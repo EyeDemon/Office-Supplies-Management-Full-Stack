@@ -296,7 +296,6 @@ CREATE TABLE products (
     price         DECIMAL(18,6)  NOT NULL DEFAULT 0 COMMENT 'Giá nhập/tham chiếu',
     avg_unit_price DECIMAL(18,6) NOT NULL DEFAULT 0 COMMENT 'Giá vốn trung bình toàn hệ thống (cache)',
     stock_qty     INT            NOT NULL DEFAULT 0 COMMENT 'Tổng tồn kho toàn hệ thống (cache, derived)',
-    reserved_quantity INT        NOT NULL DEFAULT 0 COMMENT 'Tổng hàng giữ chỗ toàn hệ thống (cache, derived)',
     min_stock_qty INT            NOT NULL DEFAULT 0 COMMENT 'Mức tồn kho tối thiểu (cảnh báo)',
     reorder_point INT UNSIGNED   NULL         COMMENT 'Điểm đặt hàng lại',
     description   TEXT           NULL,
