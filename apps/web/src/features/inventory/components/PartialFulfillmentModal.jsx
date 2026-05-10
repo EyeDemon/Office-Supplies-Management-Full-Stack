@@ -18,7 +18,7 @@ const PartialFulfillmentModal = ({ orderId, show, onHide, onConfirm, actionLoadi
         const orderItems = r.data.data?.items || [];
         setItems(orderItems);
         const init = {};
-        orderItems.forEach(it => { init[it.item_id || it.id] = it.quantity; });
+        orderItems.forEach(it => { init[it.item_id ?? it.id] = it.quantity; });
         setFulfilled(init);
       })
       .catch(() => setErr('Không thể tải chi tiết phiếu'))
@@ -27,14 +27,14 @@ const PartialFulfillmentModal = ({ orderId, show, onHide, onConfirm, actionLoadi
 
   const handleConfirm = () => {
     const fulfilledItems = items.map(it => {
-      const id = it.item_id || it.id;
+      const id = it.item_id ?? it.id;
       return { itemId: id, quantityFulfilled: Number(fulfilled[id] ?? it.quantity) };
     });
     onConfirm(orderId, fulfilledItems);
   };
 
   const totalApproved  = items.reduce((s, it) => s + (it.quantity || 0), 0);
-  const totalFulfilled = items.reduce((s, it) => s + Number(fulfilled[it.item_id || it.id] ?? it.quantity), 0);
+  const totalFulfilled = items.reduce((s, it) => s + Number(fulfilled[it.item_id ?? it.id] ?? it.quantity), 0);
   const isPartial      = totalFulfilled < totalApproved;
 
   return (
@@ -63,7 +63,7 @@ const PartialFulfillmentModal = ({ orderId, show, onHide, onConfirm, actionLoadi
               </thead>
               <tbody>
                 {items.map(it => {
-                  const id          = it.item_id || it.id;
+                  const id          = it.item_id ?? it.id;
                   const approved    = it.quantity || 0;
                   const fulfilledQty = Number(fulfilled[id] ?? approved);
                   const remaining   = approved - fulfilledQty;

@@ -165,7 +165,7 @@ router.post('/price-history', requireLogin, requireManagerOrAdmin, idempotencyCh
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     await addPriceHistoryUC.execute(conn, {
       userId: req.session.userId,
       productId, supplierId, unitPrice, quantity, note,
@@ -187,7 +187,7 @@ router.post('/requests', requireLogin, idempotencyCheck, async (req, res, next) 
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await createPRUseCase.execute(conn, {
       createdBy: req.session.userId,
       warehouseId: dto.warehouseId,
@@ -208,7 +208,7 @@ router.post('/requests/:id/approve', requireLogin, requireManagerOrAdmin, idempo
   const id = parseInt(req.params.id, 10);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await approvePRUC.execute(conn, { prId: id, approvedBy: req.session.userId, ipAddress: getClientIp(req) });
     await conn.commit();
     res.json({ success: true, message: `Đã duyệt đề nghị mua hàng ${result.prCode}` });
@@ -223,7 +223,7 @@ router.post('/requests/:id/reject', requireLogin, requireManagerOrAdmin, idempot
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await rejectPRUC.execute(conn, { prId: id, rejectedBy: req.session.userId, reason: dto.rejectionNote, ipAddress: getClientIp(req) });
     await conn.commit();
     res.json({ success: true, message: `Đã từ chối đề nghị mua hàng ${result.prCode}` });
@@ -235,7 +235,7 @@ router.post('/requests/:id/cancel', requireLogin, requireManagerOrAdmin, idempot
   const id = parseInt(req.params.id, 10);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await cancelPRUC.execute(conn, { prId: id, cancelledBy: req.session.userId, ipAddress: getClientIp(req) });
     await conn.commit();
     res.json({ success: true, message: `Đã huỷ đề nghị mua hàng ${result.prCode}` });
@@ -249,7 +249,7 @@ router.post('/requests/bulk-approve', requireLogin, requireManagerOrAdmin, idemp
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await bulkApprovePRUC.execute(conn, {
       ids: dto.ids,
       approvedBy: req.session.userId,
@@ -274,7 +274,7 @@ router.post('/orders', requireLogin, requireManagerOrAdmin, idempotencyCheck, as
   try { dto = CreatePurchaseOrderSchema.parse(req.body); } catch (e) { return next(e); }
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await createPOUseCase.execute(conn, {
       purchaseRequestId: dto.prId, supplierId: dto.supplierId, warehouseId: dto.warehouseId,
       createdBy: req.session.userId, note: dto.note, expectedDate: dto.expectedDate || null,
@@ -291,7 +291,7 @@ router.post('/orders/:id/confirm', requireLogin, requireManagerOrAdmin, idempote
   const id = parseInt(req.params.id, 10);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await approvePOUseCase.execute(conn, { poId: id, confirmedBy: req.session.userId, ipAddress: getClientIp(req) });
     await conn.commit();
     res.json({ success: true, message: `Đã xác nhận đơn mua hàng ${result.poCode}` });
@@ -305,7 +305,7 @@ router.post('/orders/bulk-confirm', requireLogin, requireManagerOrAdmin, idempot
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await bulkApprovePOUC.execute(conn, {
       ids: dto.ids,
       approvedBy: req.session.userId,
@@ -325,7 +325,7 @@ router.post('/orders/:id/receive', requireLogin, requireWarehouseOrAdmin, idempo
   const id = parseInt(req.params.id, 10);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await processReceiveUC.execute(conn, {
       poId: id, receivedBy: req.session.userId,
       receivedItems: Array.isArray(req.body.receivedItems) ? req.body.receivedItems : null,
@@ -341,7 +341,7 @@ router.post('/orders/:id/cancel', requireLogin, requireManagerOrAdmin, idempoten
   const id = parseInt(req.params.id, 10);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await cancelPOUC.execute(conn, { poId: id, cancelledBy: req.session.userId, ipAddress: getClientIp(req) });
     await conn.commit();
     res.json({ success: true, message: `Đã huỷ PO ${result.poCode}` });
@@ -366,7 +366,7 @@ router.post('/auto-pr/generate', requireLogin, requireManagerOrAdmin, idempotenc
   const { priority, note, productIds } = req.body;
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await generateAutoPRUC.execute(conn, {
       userId: req.session.userId,
       priority, note, productIds,

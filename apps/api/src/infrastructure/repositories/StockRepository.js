@@ -175,10 +175,6 @@ class StockRepository {
     );
   }
 
-  async updateProductAvgPrice(conn, productId, avgPrice) {
-    await conn.query('UPDATE products SET avg_unit_price = ? WHERE id = ?', [avgPrice, productId]);
-  }
-
   async updateGlobalAvgPrice(conn, productId, newAvgPrice) {
     await conn.query(
       `UPDATE products SET avg_unit_price = ? WHERE id = ?`,

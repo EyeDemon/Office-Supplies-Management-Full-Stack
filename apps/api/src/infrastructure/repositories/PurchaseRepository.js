@@ -144,12 +144,21 @@ class PurchaseRepository {
     }
   }
 
-  async markPOReceived(conn, poId, receivedBy) {
+  async markPOReceived(conn, poId, receivedBy, status = 'RECEIVED') {
     await conn.query(
       `UPDATE purchase_orders
-       SET status = 'RECEIVED', received_by = ?, received_at = NOW(), updated_at = NOW()
+       SET status = ?, received_by = ?, received_at = NOW(), updated_at = NOW()
        WHERE id = ?`,
-      [receivedBy, poId]
+      [status, receivedBy, poId]
+    );
+  }
+
+  async updatePOItemReceivedQty(conn, poId, productId, qtyAdded) {
+    await conn.query(
+      `UPDATE purchase_order_items
+       SET quantity_received = quantity_received + ?
+       WHERE purchase_order_id = ? AND product_id = ?`,
+      [qtyAdded, poId, productId]
     );
   }
 

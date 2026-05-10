@@ -92,7 +92,7 @@ router.post('/', requireLogin, requireWarehouseOrAdmin, idempotencyCheck, async 
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const code = await repo.genCode(conn);
     
     const rtnId = await repo.create(conn, {
@@ -128,7 +128,7 @@ router.put('/:id', requireLogin, requireWarehouseOrAdmin, idempotencyCheck, asyn
   const data = validation.data.body;
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const rtn = await repo.getReturnForUpdate(conn, id);
     if (!rtn) throw new NotFoundError('ReturnOrder', id);
     if (rtn.status !== 'DRAFT') throw new ValidationError('Chỉ có thể sửa phiếu ở trạng thái DRAFT');
@@ -175,7 +175,7 @@ router.post('/:id/complete', requireLogin, requireWarehouseOrAdmin, idempotencyC
   
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     
     const { rtn, isSupplierReturn } = await processReturnUC.execute(conn, id, req.session.userId, getClientIp(req));
     
@@ -194,7 +194,7 @@ router.delete('/:id/cancel', requireLogin, requireWarehouseOrAdmin, idempotencyC
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const rtn = await repo.getReturnForUpdate(conn, id);
     if (!rtn) throw new NotFoundError('ReturnOrder', id);
     if (['COMPLETED','CANCELLED'].includes(rtn.status)) {

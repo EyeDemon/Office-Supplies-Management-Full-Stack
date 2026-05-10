@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import { authAPI, setCsrfToken, clearCsrfToken } from '../services/api';
+import { AUTH_DISPLAY_KEY } from '../shared/constants';
+
 
 const AuthContext = createContext(null);
 
@@ -11,7 +13,7 @@ const AuthContext = createContext(null);
  *   - Nếu session hết hạn → /auth/me thất bại → logout tự động
  */
 
-const DISPLAY_KEY = 'qlvpp_display'; // Only non-sensitive display info
+const DISPLAY_KEY = AUTH_DISPLAY_KEY; // Only non-sensitive display info
 
 const getDisplayHint = () => {
   try { return JSON.parse(localStorage.getItem(DISPLAY_KEY)); } catch { return null; }
@@ -25,38 +27,38 @@ const saveDisplayHint = (user) => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser]       = useState(null);          // Full user — từ server
+  const [user, setUser] = useState(null);          // Full user — từ server
   const [displayHint, setHint] = useState(getDisplayHint); // Display name — từ localStorage
   const [loading, setLoading] = useState(true);
-  const lastVerifyRef         = useRef(0);
+  const lastVerifyRef = useRef(0);
 
   useEffect(() => {
     const verify = async () => {
       if (!getDisplayHint()) { setLoading(false); return; }
 
       const now = Date.now();
-      const recentlyVerified = sessionStorage.getItem('session_verified') &&
-        now - lastVerifyRef.current < 5000;
+      const lastVerified = Number(sessionStorage.getItem('session_verified') || 0);
+      const recentlyVerified = now - Math.max(lastVerified, lastVerifyRef.current) < 5000;
       if (recentlyVerified) { setLoading(false); return; }
 
       try {
-        const res     = await authAPI.me();
-        const fresh   = res.data?.user;
+        const res = await authAPI.me();
+        const fresh = res.data?.user;
         if (!fresh) throw new Error('no user');
 
         const fullUser = {
-          id:          fresh.id,
-          username:    fresh.username,
-          role:        fresh.role,       // ← role luôn từ server
-          fullName:    fresh.fullName,
-          email:       fresh.email,
+          id: fresh.id,
+          username: fresh.username,
+          role: fresh.role,       // ← role luôn từ server
+          fullName: fresh.fullName,
+          email: fresh.email,
           phoneNumber: fresh.phoneNumber || null,
-          department:  fresh.department  || null,
+          department: fresh.department || null,
         };
         setUser(fullUser);
         setHint({ username: fullUser.username, fullName: fullUser.fullName });
         saveDisplayHint(fullUser);
-        sessionStorage.setItem('session_verified', '1');
+        sessionStorage.setItem('session_verified', String(now));
         lastVerifyRef.current = now;
       } catch {
         saveDisplayHint(null);
@@ -68,7 +70,7 @@ export const AuthProvider = ({ children }) => {
       }
     };
     verify();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const login = useCallback((userData, csrfToken) => {
@@ -76,12 +78,13 @@ export const AuthProvider = ({ children }) => {
     setUser(userData);
     setHint({ username: userData.username, fullName: userData.fullName });
     saveDisplayHint(userData);
-    sessionStorage.setItem('session_verified', '1');
-    lastVerifyRef.current = Date.now();
+    const now = Date.now();
+    sessionStorage.setItem('session_verified', String(now));
+    lastVerifyRef.current = now;
   }, []);
 
   const logout = useCallback(async () => {
-    try { await authAPI.logout(); } catch {}
+    try { await authAPI.logout(); } catch { }
     clearCsrfToken();
     saveDisplayHint(null);
     sessionStorage.removeItem('session_verified');
@@ -89,10 +92,10 @@ export const AuthProvider = ({ children }) => {
     setHint(null);
   }, []);
 
-  const isAdmin            = user?.role === 'ADMIN';
-  const isManager          = user?.role === 'MANAGER';
-  const isWarehouse        = user?.role === 'WAREHOUSE';
-  const isManagerOrAdmin   = isAdmin || isManager;
+  const isAdmin = user?.role === 'ADMIN';
+  const isManager = user?.role === 'MANAGER';
+  const isWarehouse = user?.role === 'WAREHOUSE';
+  const isManagerOrAdmin = isAdmin || isManager;
   const isWarehouseOrAdmin = isAdmin || isManager || isWarehouse;
 
   return (

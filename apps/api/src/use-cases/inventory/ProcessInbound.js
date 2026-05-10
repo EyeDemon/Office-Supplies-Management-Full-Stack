@@ -3,7 +3,7 @@
  * ProcessInbound.js — Luồng nhập kho (APPROVED → COMPLETED). (v2 — Dependency Injection)
  */
 const { computeMovingAverage } = require('../../domain/rules');
-const { NotFoundError, WarehouseLockedError } = require('../../domain/errors');
+const { NotFoundError, WarehouseLockedError, ValidationError } = require('../../domain/errors');
 
 const { InventoryTransaction } = require('../../domain/entities');
 const { emitTransactionCompleted } = require('../../shared/utils/eventHelper');
@@ -22,13 +22,19 @@ class ProcessInbound {
    * @param {object} opts
    */
   async execute(conn, { orderId, orderCode, warehouseId, items, completedBy, referenceType = 'import_order', notePrefix = 'Phiếu nhập' }) {
-    // 0. Check for active stocktaking session (BIZ-03)
+    // 0. Check for active stocktaking session FIRST (BIZ-03)
+    // Warehouse lock check takes priority over items validation —
+    // a locked warehouse cannot accept any operation regardless of payload.
     if (this.stocktakingRepo) {
       const isLocked = await this.stocktakingRepo.hasActiveSession(conn, warehouseId);
       if (isLocked) {
         throw new WarehouseLockedError(warehouseId, `Kho #${warehouseId} đang trong quá trình kiểm kê. Tạm thời không thể nhập kho.`);
       }
+    }
 
+    // 1. Validate items AFTER warehouse-level checks
+    if (!items || items.length === 0) {
+      throw new ValidationError('Phiếu nhập không có hàng hóa');
     }
 
     const completedItems = [];
@@ -46,7 +52,9 @@ class ProcessInbound {
         : quantity;
 
       // 3. Moving Average Costing
-      const totalPrice = Number(unitPrice) * Number(quantity);
+      // [BUG-FIX] Use convertedQty instead of raw quantity to avoid double-conversion inaccuracies
+      // Prioritize totalPrice from line item if available (Spec III.5)
+      const totalPrice = item.totalPrice !== undefined ? Number(item.totalPrice) : Number(unitPrice) * convertedQty;
       const pricePerBase = (convertedQty > 0) ? totalPrice / convertedQty : Number(unitPrice);
 
       const newAvg = computeMovingAverage(
@@ -96,7 +104,7 @@ class ProcessInbound {
         note: itemNote || `${notePrefix} ${orderCode}`, createdBy: completedBy,
       });
 
-      await emitTransactionCompleted('IMPORT', txId, { orderCode, productId, warehouseId, quantity: convertedQty });
+      await emitTransactionCompleted('IMPORT', txId, { orderCode, productId, warehouseId, quantity: convertedQty }, conn);
 
       // 7. Notification Cleanup
       if (stockAfter > product.min_stock_qty) {

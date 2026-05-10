@@ -18,10 +18,6 @@ class ProcessPurchaseOrderReceive {
     const po = await this.purchaseRepo.findPOById(conn, poId, true);
     if (!po) throw new NotFoundError('Đơn đặt hàng', poId);
 
-    assertValidTransition('purchase_order', po.status, 'RECEIVED');
-
-    if (!po.warehouse_id) throw new ValidationError('Đơn đặt hàng chưa chỉ định kho nhận hàng');
-
     const poItems = await this.purchaseRepo.findPOItems(conn, poId);
 
     const receivedMap = {};
@@ -31,57 +27,78 @@ class ProcessPurchaseOrderReceive {
       }
     }
 
+    // ── 2b. Determine nextStatus and validate transition ──────────
+    let isAllDone = true;
     const itemsToProcess = [];
+    
     for (const item of poItems) {
-      const qtyReceived = receivedMap[item.product_id] !== undefined
+      const qtyReceivedNow = receivedMap[item.product_id] !== undefined
         ? receivedMap[item.product_id]
-        : item.quantity;
+        : 0; // Default to 0 if not in list (partial receive)
 
-      if (qtyReceived <= 0) continue;
+      if (qtyReceivedNow > 0) {
+        itemsToProcess.push({
+          productId: item.product_id,
+          quantity: qtyReceivedNow,
+          unitPrice: item.unit_price,
+          unitId: item.unit_id,
+          note: `Nhận hàng PO ${po.po_code}`
+        });
+      }
 
-      itemsToProcess.push({
-        productId: item.product_id,
-        quantity: qtyReceived,
-        unitPrice: item.unit_price,
-        unitId: item.unit_id,
-        note: `Nhận hàng PO ${po.po_code}`
-      });
-    }
-
-    if (itemsToProcess.length > 0) {
-      await this.inboundUC.execute(conn, {
-        orderId: poId,
-        orderCode: po.po_code,
-        warehouseId: po.warehouse_id,
-        items: itemsToProcess,
-        completedBy: receivedBy,
-        referenceType: 'purchase_order',
-        notePrefix: 'Nhận hàng PO'
-      });
-
-      // BUG-04: Record price history using standardized repository method
-      if (this.productRepo) {
-        for (const item of itemsToProcess) {
-          await this.productRepo.insertPriceHistory(conn, {
-            productId:       item.productId,
-            supplierId:      po.supplier_id,
-            purchaseOrderId: poId,
-            unitPrice:       item.unitPrice,
-            quantity:        item.quantity,
-            changedBy:       receivedBy,
-            note:            `Nhập kho từ PO ${po.po_code}`
-          });
-        }
+      const totalReceivedAfter = (Number(item.quantity_received) || 0) + qtyReceivedNow;
+      if (totalReceivedAfter < item.quantity) {
+        isAllDone = false;
       }
     }
 
-    await this.purchaseRepo.markPOReceived(conn, poId, receivedBy);
+    const nextStatus = isAllDone ? 'RECEIVED' : 'PARTIAL';
+    assertValidTransition('purchase_order', po.status, nextStatus);
+
+    if (itemsToProcess.length === 0) {
+      return { poCode: po.po_code, receivedCount: 0, message: 'Không có mặt hàng nào được nhận.' };
+    }
+
+    if (!po.warehouse_id) throw new ValidationError('Đơn đặt hàng chưa chỉ định kho nhận hàng');
+
+    // ── 3. Update received quantities for items ──────────────────
+    for (const item of itemsToProcess) {
+      await this.purchaseRepo.updatePOItemReceivedQty(conn, poId, item.productId, item.quantity);
+    }
+
+    // ── 4. Execute Inbound ────────────────────────────────────────
+    await this.inboundUC.execute(conn, {
+      orderId: poId,
+      orderCode: po.po_code,
+      warehouseId: po.warehouse_id,
+      items: itemsToProcess,
+      completedBy: receivedBy,
+      referenceType: 'purchase_order',
+      notePrefix: 'Nhận hàng PO'
+    });
+
+    // ── 5. Record price history ───────────────────────────────────
+    if (this.productRepo) {
+      for (const item of itemsToProcess) {
+        await this.productRepo.insertPriceHistory(conn, {
+          productId:       item.productId,
+          supplierId:      po.supplier_id,
+          purchaseOrderId: poId,
+          unitPrice:       item.unitPrice,
+          quantity:        item.quantity,
+          changedBy:       receivedBy,
+          note:            `Nhập kho từ PO ${po.po_code}`
+        });
+      }
+    }
+
+    await this.purchaseRepo.markPOReceived(conn, poId, receivedBy, nextStatus);
 
     await writeAuditLog(conn, {
       entityType: 'purchase_order', entityId: poId, action: 'RECEIVE',
       changedBy: receivedBy, ipAddress,
       beforeData: { status: po.status },
-      afterData:  { status: 'RECEIVED', receivedCount: itemsToProcess.length },
+      afterData:  { status: nextStatus, receivedCount: itemsToProcess.length },
     });
 
     return { poCode: po.po_code, receivedCount: itemsToProcess.length };

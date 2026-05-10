@@ -14,7 +14,8 @@ const stockRepo = require('../infrastructure/repositories/StockRepository');
 const ConfirmStocktaking = require('../use-cases/inventory/ConfirmStocktaking');
 
 const confirmUC = new ConfirmStocktaking({
-  stockRepository: stockRepo
+  stockRepository: stockRepo,
+  stocktakingRepository: repo
 });
 const CreateStocktakingSession = require('../use-cases/inventory/CreateStocktakingSession');
 const InputStocktakingItems = require('../use-cases/inventory/InputStocktakingItems');
@@ -72,7 +73,7 @@ router.post('/', requireLogin, requireWarehouseOrAdmin, idempotencyCheck, async 
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await createUC.execute(conn, {
       note: dto.note, 
       productIds: dto.productIds, 
@@ -95,7 +96,7 @@ router.put('/:id/items', requireLogin, requireWarehouseOrAdmin, idempotencyCheck
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     await inputUC.execute(conn, { sessionId: id, updates: dto.items });
     await conn.commit();
     res.json({ success: true, message: 'Đã cập nhật số lượng thực tế' });
@@ -108,7 +109,7 @@ router.put('/:id/start-counting', requireLogin, requireWarehouseOrAdmin, idempot
   if (!id) return next(new ValidationError('ID không hợp lệ'));
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     await startCountingUC.execute(conn, { sessionId: id, actorId: req.session.userId, ipAddress: getClientIp(req) });
     await conn.commit();
     res.json({ success: true, message: 'Đã bắt đầu kiểm kê. Kho đã được khoá cho các giao dịch khác.' });
@@ -121,7 +122,7 @@ router.post('/:id/complete', requireLogin, requireWarehouseOrAdmin, idempotencyC
   if (!id) return next(new ValidationError('ID không hợp lệ'));
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     const result = await confirmUC.execute(conn, {
       sessionId: id, confirmedBy: req.session.userId, ipAddress: getClientIp(req),
     });
@@ -135,7 +136,7 @@ router.delete('/:id/cancel', requireLogin, requireWarehouseOrAdmin, idempotencyC
   const id = parseId(req);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 15);
     await cancelUC.execute(conn, { sessionId: id, cancelledBy: req.session.userId, ipAddress: getClientIp(req) });
     await conn.commit();
     res.json({ success: true, message: 'Đã huỷ đợt kiểm kê' });

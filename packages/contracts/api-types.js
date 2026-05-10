@@ -55,7 +55,7 @@ const HTTP_STATUS = Object.freeze({
   [ErrorCode.INTERNAL_ERROR]: 500,
 });
 
-module.exports = {
+export {
   ErrorCode,
   successResponse,
   paginatedResponse,

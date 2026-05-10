@@ -31,6 +31,7 @@ const ApproveRequisition = require('../use-cases/requisition/ApproveRequisition'
 const CancelRequisition = require('../use-cases/requisition/CancelRequisition');
 const UpdateRequisition = require('../use-cases/requisition/UpdateRequisition');
 const WarehouseConfirmRequisition = require('../use-cases/requisition/WarehouseConfirmRequisition');
+const ReserveStock = require('../use-cases/inventory/ReserveStock');
 
 const createRequisitionUC = new CreateRequisition({
   requisitionRepository: reqRepo,
@@ -45,7 +46,8 @@ const approveRequisitionUC = new ApproveRequisition({
   userRepository: userRepo,
   stockRepository: stockRepo,
   quotaRepository: quotaRepo,
-  productRepository: productRepo
+  productRepository: productRepo,
+  reserveStockUseCase: new ReserveStock({ stockRepository: stockRepo })
 });
 
 
@@ -292,7 +294,7 @@ router.post('/:id/reject', requireLogin, requireManagerOrAdmin, idempotencyCheck
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
 
     const req_ = await reqRepo.findById(conn, id, true);
     if (!req_) throw new NotFoundError('Phiếu yêu cầu', id);
@@ -330,7 +332,7 @@ router.post('/:id/cancel', requireLogin, idempotencyCheck, async (req, res, next
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const result = await cancelRequisitionUC.execute(conn, {
       requisitionId: id, cancelledBy: req.session.userId,
       userRole: req.session.role, reason: req.body.reason || null,
@@ -356,7 +358,7 @@ router.post('/:id/warehouse-confirm', requireLogin, requireWarehouseOrAdmin, ide
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
 
     const result = await warehouseConfirmUC.execute(conn, {
       requisitionId: id,
@@ -398,7 +400,7 @@ router.put('/:id', requireLogin, idempotencyCheck, async (req, res, next) => {
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateRequisitionUC.execute(conn, {
       id,
       userId: req.session.userId,
@@ -418,7 +420,7 @@ router.post('/bulk-approve', requireLogin, requireManagerOrAdmin, idempotencyChe
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const result = await bulkApproveUC.execute(conn, {
       ids,
       approvedBy: req.session.userId,
@@ -436,7 +438,7 @@ router.post('/bulk-reject', requireLogin, requireManagerOrAdmin, idempotencyChec
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     let rejectedCount = 0;
     for (const id of ids) {
       const r = await reqRepo.findById(conn, id, true);

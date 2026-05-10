@@ -44,17 +44,66 @@ async function end() {
   await pool.end();
 }
 
+function patchConnection(conn) {
+  if (conn._isPatched) return;
+
+  // 1. Patch beginTransaction (to initialize events)
+  conn._originalBeginTransaction = conn.beginTransaction.bind(conn);
+  conn.beginTransaction = async (...args) => {
+    conn._deferredEvents = [];
+    return conn._originalBeginTransaction(...args);
+  };
+
+  // 2. Patch commit (to fire events)
+  conn._originalCommit = conn.commit.bind(conn);
+  conn.commit = async () => {
+    await conn._originalCommit();
+    if (conn._deferredEvents && conn._deferredEvents.length > 0) {
+      const events = conn._deferredEvents;
+      conn._deferredEvents = []; // Clear before running to prevent loops
+      for (const fn of events) {
+        try {
+          await fn();
+        } catch (err) {
+          console.error('[DB] Error in deferred event:', err.message);
+        }
+      }
+    }
+  };
+
+  // 3. Patch rollback (to discard events)
+  conn._originalRollback = conn.rollback.bind(conn);
+  conn.rollback = async () => {
+    await conn._originalRollback();
+    conn._deferredEvents = [];
+  };
+
+  conn._isPatched = true;
+}
+
+async function getConnection() {
+  const conn = await pool.getConnection();
+  patchConnection(conn);
+  return conn;
+}
+
 async function beginTransactionWithTimeout(conn, seconds = 10) {
+  patchConnection(conn);
   await conn.query(`SET innodb_lock_wait_timeout = ?`, [seconds]);
   await conn.beginTransaction();
+}
+
+async function commitTransaction(conn) {
+  await conn.commit();
 }
 
 module.exports = {
   pool,
   query: pool.query.bind(pool),
-  getConnection: pool.getConnection.bind(pool),
+  getConnection,
   execute: pool.execute.bind(pool),
   beginTransactionWithTimeout,
+  commitTransaction,
   isHealthy,
   end,
 };

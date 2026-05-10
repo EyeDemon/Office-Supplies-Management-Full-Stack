@@ -124,24 +124,36 @@ class WarehouseConfirmRequisition {
     }
 
     let orderId = null;
-    // ── 4d. Create linked Export Order (BIZ-02) ─────────────────────
+    // ── 4d. Sync linked Export Order (BIZ-02) ─────────────────────
     if (this.orderRepo && dispensedItems.length > 0) {
-      const exportCode = await this.orderRepo.generateExportCode(conn);
       const totalQty = dispensedItems.reduce((sum, i) => sum + i.quantity, 0);
-
-      orderId = await this.orderRepo.createExport(conn, {
-        orderCode: exportCode,
-        recipientName: req.requester_name || null,
-        department: req.department || null,
-        warehouseId: req.warehouse_id,
-        note: `Tự động tạo từ yêu cầu cấp phát: ${req.req_code}`,
-        totalQty,
-        createdBy: confirmedBy,
-        status: 'COMPLETED',
-        requisitionId: requisitionId
-      });
-
-      await this.orderRepo.insertExportItems(conn, orderId, dispensedItems);
+      
+      const existingOrder = await this.orderRepo.findExportByRequisitionId(conn, requisitionId);
+      
+      if (existingOrder) {
+        // Reuse existing order created during APPROVE state
+        await this.orderRepo.completeExportWithItems(conn, existingOrder.id, {
+          userId: confirmedBy,
+          totalQty,
+          items: dispensedItems
+        });
+        orderId = existingOrder.id;
+      } else {
+        // Fallback: Create new if not found
+        const exportCode = await this.orderRepo.generateExportCode(conn);
+        orderId = await this.orderRepo.createExport(conn, {
+          orderCode: exportCode,
+          recipientName: req.requester_name || null,
+          department: req.department || null,
+          warehouseId: req.warehouse_id,
+          note: `Tự động tạo từ yêu cầu cấp phát: ${req.req_code}`,
+          totalQty,
+          createdBy: confirmedBy,
+          status: 'COMPLETED',
+          requisitionId: requisitionId
+        });
+        await this.orderRepo.insertExportItems(conn, orderId, dispensedItems);
+      }
     }
 
     // ── 5. Mark requisition WAREHOUSE_CONFIRMED ────────────────────

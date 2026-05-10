@@ -87,7 +87,7 @@ class ProcessTransfer {
         note: `Xuất điều chuyển ${transferCode}`, createdBy: userId
       });
       
-      await emitTransactionCompleted('TRANSFER_OUT', txId, { transferCode, productId, fromWarehouseId, quantity: baseQty });
+      await emitTransactionCompleted('TRANSFER_OUT', txId, { transferCode, productId, fromWarehouseId, quantity: baseQty }, conn);
       await checkAndEmitStockLow(conn, productId);
 
       dispatchedItems.push({ productId, baseQty });
@@ -208,7 +208,7 @@ class ProcessTransfer {
         note: `Nhập điều chuyển ${transferCode}`, createdBy: userId
       });
 
-      await emitTransactionCompleted('TRANSFER_IN', txId, { transferCode, productId, toWarehouseId, quantity: baseQty });
+      await emitTransactionCompleted('TRANSFER_IN', txId, { transferCode, productId, toWarehouseId, quantity: baseQty }, conn);
       receivedItems.push({ productId, baseQty });
     }
     return receivedItems;

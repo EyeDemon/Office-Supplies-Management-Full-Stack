@@ -197,7 +197,7 @@ router.get('/stock-history', requireLogin, requireWarehouseOrAdmin, attachUserWa
 
 router.get('/stock-history/export', requireLogin, requireWarehouseOrAdmin, attachUserWarehouses, async (req, res, next) => {
   const { dateFrom, dateTo, warehouseId, productId } = req.query;
-  const conn = await db.pool.getConnection();
+  const conn = await db.getConnection();
   try {
     let where = '1=1';
     const params = [];

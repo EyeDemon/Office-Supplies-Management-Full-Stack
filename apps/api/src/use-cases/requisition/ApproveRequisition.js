@@ -13,13 +13,14 @@ const { writeAuditLog } = require('../../shared/utils/auditLogger');
 const { NotFoundError, ValidationError } = require('../../domain/errors');
 
 class ApproveRequisition {
-  constructor({ requisitionRepository, orderRepository, userRepository, stockRepository, quotaRepository, productRepository } = {}) {
+  constructor({ requisitionRepository, orderRepository, userRepository, stockRepository, quotaRepository, productRepository, reserveStockUseCase } = {}) {
     this.reqRepo = requisitionRepository;
     this.orderRepo = orderRepository;
     this.userRepo = userRepository;
     this.stockRepo = stockRepository;
     this.quotaRepo = quotaRepository;
     this.productRepo = productRepository;
+    this.reserveUC = reserveStockUseCase;
   }
 
 
@@ -57,9 +58,10 @@ class ApproveRequisition {
       }
     }
 
-    const warnings = [];
-    const { warehouseId } = requisition;
+    const warehouseId = requisition.warehouse_id;
     const exportItems = [];
+    const reserveItems = [];
+    const warnings = [];
 
     for (const item of items) {
       const qtyApproved = approvedMap[item.id] !== undefined
@@ -78,27 +80,14 @@ class ApproveRequisition {
         note: `Theo phiếu yêu cầu ${requisition.req_code}`
       });
 
-      let available = 0;
       if (warehouseId) {
-        // Spec VIII.6: lock per-warehouse row
-        const ws = await this.stockRepo.findStock(conn, warehouseId, item.product_id, true);
-
-        available = ws ? (Number(ws.stock_qty) - Number(ws.reserved_quantity || 0)) : 0;
-
-        if (available < qtyApproved) {
-          const { InsufficientStockError } = require('../../domain/errors');
-          throw new InsufficientStockError({
-            warehouseId,
-            productId: item.product_id,
-            available,
-            requested: qtyApproved,
-            productName: item.product_name
-          });
-        }
-
-        // 1. Update warehouse-specific reservation
-        await this.stockRepo.increaseReservation(conn, warehouseId, item.product_id, qtyApproved);
+        reserveItems.push({ productId: item.product_id, quantity: qtyApproved });
       }
+    }
+
+    // Spec VIII.6: Standardized Reservation
+    if (warehouseId && reserveItems.length > 0 && this.reserveUC) {
+      await this.reserveUC.execute(conn, { warehouseId, items: reserveItems });
     }
 
     // 6. Cập nhật header → APPROVED

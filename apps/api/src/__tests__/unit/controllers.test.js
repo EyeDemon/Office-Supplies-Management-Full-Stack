@@ -62,6 +62,11 @@ describe('stocktaking.controller — source analysis', () => {
     expect(src).toMatch(/ConfirmStocktaking/);
   });
 
+  test('stocktakingRepository được inject vào ConfirmStocktaking', () => {
+    // Regression test cho BUG #1
+    expect(src).toMatch(/new\s+ConfirmStocktaking\s*\(\s*\{[\s\S]*?stocktakingRepository:\s*repo/);
+  });
+
   test('StartCountingStocktaking được import', () => {
     expect(src).toMatch(/StartCountingStocktaking/);
   });
@@ -103,5 +108,36 @@ describe('[BUG-CRIT-02] StartCountingStocktaking — entity key', () => {
   test('dùng key "stocktaking" (không phải "stocktaking_session")', () => {
     expect(src).toMatch(/assertValidTransition\s*\(\s*['"]stocktaking['"]/);
     expect(src).not.toMatch(/assertValidTransition\s*\(\s*['"]stocktaking_session['"]/);
+  });
+});
+describe('[BUG #7] Transaction Timeout Validation', () => {
+  const controllers = [
+    '../../controllers/order.controller.js',
+    '../../controllers/transfer.controller.js',
+    '../../controllers/stocktaking.controller.js',
+    '../../controllers/export-order.controller.js',
+    '../../controllers/requisition.controller.js',
+    '../../controllers/purchase.controller.js',
+    '../../controllers/return.controller.js'
+  ];
+
+  test.each(controllers)('%s should use beginTransactionWithTimeout', (filePath) => {
+    const src = fs.readFileSync(path.resolve(__dirname, filePath), 'utf-8');
+    // Ensure no plain conn.beginTransaction() remains in inventory-critical controllers
+    // (We exclude comments or non-matching contexts if needed, but here simple match is enough)
+    expect(src).not.toMatch(/conn\.beginTransaction\(\)/);
+    expect(src).toMatch(/db\.beginTransactionWithTimeout/);
+  });
+});
+describe('[BUG #8] Missing Audit Logs Validation', () => {
+  test('order.controller.js should have audit logs for cancel and complete', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, '../../controllers/order.controller.js'), 'utf-8');
+    expect(src).toMatch(/router\.post\(['"]\/:id\/cancel['"][\s\S]*?writeAuditLog[\s\S]*?action:\s*['"]CANCEL['"]/);
+    expect(src).toMatch(/router\.post\(['"]\/:id\/complete['"][\s\S]*?writeAuditLog[\s\S]*?action:\s*['"]COMPLETE['"]/);
+  });
+
+  test('export-order.controller.js should have audit log for complete', () => {
+    const src = fs.readFileSync(path.resolve(__dirname, '../../controllers/export-order.controller.js'), 'utf-8');
+    expect(src).toMatch(/router\.post\(['"]\/:id\/complete['"][\s\S]*?writeAuditLog[\s\S]*?action:\s*['"]COMPLETE['"]/);
   });
 });

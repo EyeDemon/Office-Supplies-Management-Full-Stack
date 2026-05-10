@@ -22,13 +22,18 @@ class ProcessOutbound {
    * @param {object} opts
    */
   async execute(conn, { orderId, orderCode, warehouseId, items, hasReservation = false, completedBy, requisitionId = null }) {
-    // 0. Check for active stocktaking session (BIZ-03)
+    // 0. Check for active stocktaking session FIRST (BIZ-03)
+    // Warehouse-level check takes priority — a locked warehouse cannot dispatch.
     if (this.stocktakingRepo) {
       const isLocked = await this.stocktakingRepo.hasActiveSession(conn, warehouseId);
       if (isLocked) {
         throw new WarehouseLockedError(warehouseId, `Kho #${warehouseId} đang trong quá trình kiểm kê. Tạm thời không thể xuất kho.`);
       }
+    }
 
+    // 1. Validate items AFTER warehouse-level checks
+    if (!items || items.length === 0) {
+      throw new ValidationError('Phiếu xuất không có hàng hóa');
     }
 
     const dispatchedItems = [];
@@ -36,7 +41,7 @@ class ProcessOutbound {
     for (const item of items) {
       const { productId, quantity, unitId, lotId = null } = item;
 
-      // 0. Validate Lot (Spec IX.2)
+      // 1a. Validate Lot (Spec IX.2)
       if (lotId) {
         const lot = await this.lotRepo.findById(conn, lotId);
         if (!lot) {
@@ -47,18 +52,18 @@ class ProcessOutbound {
         }
       }
 
-      // 1. Convert to base unit (using injected service)
+      // 2. Convert to base unit (using injected service)
       const dispatchQty = this.unitService
         ? await this.unitService.convertToBase(conn, productId, unitId, quantity)
         : quantity;
 
-      // 2. Find and Lock Stock
+      // 3. Find and Lock Warehouse Stock (FOR UPDATE NOWAIT — anti-oversell, Spec VIII.6)
       const wsRow = await this.stockRepo.findStock(conn, warehouseId, productId, true);
       if (!wsRow) {
         throw Object.assign(new Error(`Sản phẩm #${productId} chưa có trong kho #${warehouseId}`), { code: 'INSUFFICIENT_STOCK' });
       }
 
-      // 3. Domain Logic
+      // 4. Domain Logic
       const stock = new Stock({
         warehouseId,
         productId,
@@ -68,20 +73,21 @@ class ProcessOutbound {
       });
       stock.assertSufficientStock(dispatchQty, hasReservation);
 
-      // 4. Update Warehouse Stock
+      // 5. Update Warehouse Stock
       const qtyDelta = -dispatchQty;
       const costPerUnit = Math.round(Number(wsRow.avg_unit_price || 0) * 1000000) / 1000000;
       const newAvg = stock.stockQty - dispatchQty > 0 ? stock.avgUnitPrice : 0;
       await this.stockRepo.upsertStock(conn, warehouseId, productId, qtyDelta, newAvg);
 
-      // 4b. Sync Global Avg (BUG-05) — If global stock becomes 0, reset avg to 0.
-      // We get the new global stock from the database (refreshed by trigger)
+      // 5b. Sync Global Avg (BUG-05) — If global stock becomes 0, reset avg to 0.
+      // DB trigger fires on warehouse_stock UPDATE and aggregates into products.stock_qty.
+      // Read WITHOUT lock (false) — inside same transaction, trigger result is already visible.
       const updatedProduct = await this.stockRepo.findProduct(conn, productId, false);
       if (updatedProduct && updatedProduct.stock_qty <= 0) {
         await this.stockRepo.updateGlobalAvgPrice(conn, productId, 0);
       }
 
-      // 5. Sync Reservations
+      // 6. Sync Reservations
       if (hasReservation) {
         await this.stockRepo.decreaseReservation(conn, warehouseId, productId, dispatchQty);
         // Note: Global reservation is now handled by DB trigger on products table 
@@ -124,7 +130,7 @@ class ProcessOutbound {
         await this.orderRepo.updateFulfilledQuantity(conn, orderId, productId, quantity);
       }
 
-      await emitTransactionCompleted('EXPORT', txId, { orderCode, productId, warehouseId, quantity: dispatchQty });
+      await emitTransactionCompleted('EXPORT', txId, { orderCode, productId, warehouseId, quantity: dispatchQty }, conn);
 
       dispatchedItems.push({ productId, qtyDispatched: dispatchQty, costPerUnit, stockBefore, stockAfter });
       await checkAndEmitStockLow(conn, productId);

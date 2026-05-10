@@ -93,7 +93,7 @@ class ProcessAdjustment {
         createdBy: adjustedBy
       });
 
-      await emitApprovalRequired('inventory_adjustment', adjId, { adjCode, delta, reason });
+      await emitApprovalRequired('inventory_adjustment', adjId, { adjCode, delta, reason }, conn);
 
       return {
         delta,
@@ -116,7 +116,11 @@ class ProcessAdjustment {
       wsAvg = 0; // Kho về 0 → reset avg
     }
 
-    // 4b. Update warehouse_stock
+    // 4b. Lock product & capture state for Global Avg (MUST BE BEFORE upsertStock - BUG-1)
+    const product = await this.stockRepo.findProduct(conn, productId, true);
+    if (!product) throw new NotFoundError('Sản phẩm', productId);
+
+    // 4c. Update warehouse_stock
     await this.stockRepo.upsertStock(conn, warehouseId, productId, delta, Math.round(wsAvg * 1000000) / 1000000, locationId);
 
     // 5. Sync reservations if needed (if decreasing stock, ensure reserved <= stock)
@@ -125,15 +129,12 @@ class ProcessAdjustment {
     }
 
     // 6. Update global avg price (Moving Average)
-    const product = await this.stockRepo.findProduct(conn, productId, true);
-    if (!product) throw new NotFoundError('Sản phẩm', productId);
-
     const globalNewAvg = product.stock_qty + delta > 0
       ? (delta > 0 && unitPrice > 0
           ? computeMovingAverage(product.stock_qty, product.avg_unit_price, delta, unitPrice)
           : product.avg_unit_price)
       : 0;
-    await this.stockRepo.updateProductAvgPrice(conn, productId, Math.round(globalNewAvg * 1000000) / 1000000);
+    await this.stockRepo.updateGlobalAvgPrice(conn, productId, Math.round(globalNewAvg * 1000000) / 1000000);
 
     // 7. Insert ADJUSTMENT transaction
     const tx = new InventoryTransaction({
@@ -176,7 +177,7 @@ class ProcessAdjustment {
 
     // 10. Transaction completed event
     // [BUG-C] Thống nhất dùng type 'ADJUST' thay vì 'ADJUSTMENT'
-    await emitTransactionCompleted('ADJUST', txId, { adjCode, delta, productId, warehouseId });
+    await emitTransactionCompleted('ADJUST', txId, { adjCode, delta, productId, warehouseId }, conn);
 
     return {
       delta,

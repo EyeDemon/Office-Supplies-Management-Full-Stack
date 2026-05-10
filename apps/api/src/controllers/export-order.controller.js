@@ -88,7 +88,7 @@ router.get('/', requireLogin, requireWarehouseOrAdmin, attachUserWarehouses, asy
 // ── GET /export/csv ──────────────────────────────────────────────────────────
 router.get('/export/csv', requireLogin, requireWarehouseOrAdmin, attachUserWarehouses, async (req, res, next) => {
   const { status, from, to } = req.query;
-  const conn = await db.pool.getConnection();
+  const conn = await db.getConnection();
   try {
     const whFilter = buildWarehouseFilter(req, 'o.warehouse_id', true);
     
@@ -149,7 +149,7 @@ router.post('/', requireLogin, requireWarehouseOrAdmin, idempotencyCheck, async 
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const result = await createUC.execute(conn, {
       type: 'EXPORT',
       dto,
@@ -175,7 +175,7 @@ router.put('/:id', requireLogin, requireWarehouseOrAdmin, idempotencyCheck, asyn
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateUC.execute(conn, {
       type: 'EXPORT',
       id,
@@ -194,7 +194,7 @@ router.post('/:id/submit', requireLogin, requireWarehouseOrAdmin, idempotencyChe
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateStatusUC.execute(conn, {
       type: 'EXPORT', id, status: 'PENDING',
       userId: req.session.userId, ipAddress: getClientIp(req)
@@ -208,7 +208,7 @@ router.post('/:id/approve', requireLogin, requireWarehouseOrAdmin, idempotencyCh
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateStatusUC.execute(conn, {
       type: 'EXPORT', id, status: 'APPROVED',
       userId: req.session.userId, ipAddress: getClientIp(req)
@@ -223,7 +223,7 @@ router.post('/:id/reject', requireLogin, requireWarehouseOrAdmin, idempotencyChe
   const { reason } = req.body;
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateStatusUC.execute(conn, {
       type: 'EXPORT', id, status: 'REJECTED', reason,
       userId: req.session.userId, ipAddress: getClientIp(req)
@@ -237,7 +237,7 @@ router.post('/:id/cancel', requireLogin, requireWarehouseOrAdmin, idempotencyChe
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateStatusUC.execute(conn, {
       type: 'EXPORT', id, status: 'CANCELLED',
       userId: req.session.userId, ipAddress: getClientIp(req)
@@ -251,7 +251,7 @@ router.post('/:id/complete', requireLogin, requireWarehouseOrAdmin, idempotencyC
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const order = await repo.findExportById(conn, id);
     if (!order) throw new NotFoundError('Phiếu xuất', id);
     assertValidTransition('export_order', order.status, 'COMPLETED');
@@ -271,6 +271,13 @@ router.post('/:id/complete', requireLogin, requireWarehouseOrAdmin, idempotencyC
       hasReservation: true,
       completedBy: req.session.userId,
       requisitionId: order.requisition_id,
+    });
+
+    await writeAuditLog(conn, {
+      entityType: 'export_order', entityId: order.id, action: 'COMPLETE',
+      changedBy: req.session.userId, ipAddress: getClientIp(req),
+      beforeData: { status: order.status },
+      afterData: { status: 'COMPLETED' }
     });
 
     await conn.commit();

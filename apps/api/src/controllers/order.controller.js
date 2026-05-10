@@ -95,7 +95,7 @@ router.get('/', requireLogin, requireWarehouseOrAdmin, attachUserWarehouses, asy
 // ── GET /export — Xuất CSV ────────────────────────────────────────
 router.get('/export', requireLogin, requireWarehouseOrAdmin, attachUserWarehouses, async (req, res, next) => {
   const { status, supplierId, dateFrom, dateTo } = req.query;
-  const conn = await db.pool.getConnection();
+  const conn = await db.getConnection();
   try {
     const whFilter = buildWarehouseFilter(req, 'o.warehouse_id', true);
     
@@ -160,7 +160,7 @@ router.post('/', requireLogin, requireWarehouseOrAdmin, idempotencyCheck, async 
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const result = await createUC.execute(conn, {
       type: 'IMPORT',
       dto,
@@ -189,7 +189,7 @@ router.put('/:id', requireLogin, requireWarehouseOrAdmin, idempotencyCheck, asyn
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateUC.execute(conn, {
       type: 'IMPORT',
       id,
@@ -211,7 +211,7 @@ router.post('/:id/submit', requireLogin, requireWarehouseOrAdmin, idempotencyChe
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateStatusUC.execute(conn, {
       type: 'IMPORT', id, status: 'PENDING',
       userId: req.session.userId, ipAddress: getClientIp(req)
@@ -225,7 +225,7 @@ router.post('/:id/approve', requireLogin, requireWarehouseOrAdmin, idempotencyCh
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateStatusUC.execute(conn, {
       type: 'IMPORT', id, status: 'APPROVED',
       userId: req.session.userId, ipAddress: getClientIp(req)
@@ -240,7 +240,7 @@ router.post('/:id/reject', requireLogin, requireWarehouseOrAdmin, idempotencyChe
   const { reason } = req.body;
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     await updateStatusUC.execute(conn, {
       type: 'IMPORT', id, status: 'REJECTED', reason,
       userId: req.session.userId, ipAddress: getClientIp(req)
@@ -254,10 +254,17 @@ router.post('/:id/cancel', requireLogin, requireWarehouseOrAdmin, idempotencyChe
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const existing = await repo.findImportOrderForUpdate(conn, id);
-    assertValidTransition('import_order', existing?.status, 'CANCELLED');
+    if (!existing) throw new NotFoundError('Phiếu nhập kho', id);
+    assertValidTransition('import_order', existing.status, 'CANCELLED');
     await repo.updateImportStatus(conn, id, { status: 'CANCELLED', userId: req.session.userId });
+    await writeAuditLog(conn, {
+      entityType: 'import_order', entityId: id, action: 'CANCEL',
+      changedBy: req.session.userId, ipAddress: getClientIp(req),
+      beforeData: { status: existing.status },
+      afterData: { status: 'CANCELLED' }
+    });
     await conn.commit();
     res.json({ success: true, message: 'Đã huỷ phiếu nhập' });
   } catch (e) { await conn.rollback(); next(e); } finally { conn.release(); }
@@ -268,9 +275,10 @@ router.post('/:id/complete', requireLogin, requireWarehouseOrAdmin, idempotencyC
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const order = await repo.findImportById(conn, id);
-    assertValidTransition('import_order', order?.status, 'COMPLETED');
+    if (!order) throw new NotFoundError('Phiếu nhập kho', id);
+    assertValidTransition('import_order', order.status, 'COMPLETED');
 
     await inboundUC.execute(conn, {
       orderId: id,
@@ -280,6 +288,7 @@ router.post('/:id/complete', requireLogin, requireWarehouseOrAdmin, idempotencyC
         productId: i.product_id,
         quantity: i.quantity,
         unitPrice: i.unit_price,
+        totalPrice: i.total_price,
         unitId: i.unit_id,
         lotId: i.lot_id || null
       })),
@@ -287,7 +296,12 @@ router.post('/:id/complete', requireLogin, requireWarehouseOrAdmin, idempotencyC
     });
 
     await repo.updateImportStatus(conn, id, { status: 'COMPLETED', userId: req.session.userId });
-
+    await writeAuditLog(conn, {
+      entityType: 'import_order', entityId: id, action: 'COMPLETE',
+      changedBy: req.session.userId, ipAddress: getClientIp(req),
+      beforeData: { status: order.status },
+      afterData: { status: 'COMPLETED' }
+    });
     await conn.commit();
     res.json({ success: true, message: 'Đã hoàn tất nhập kho' });
   } catch (e) {

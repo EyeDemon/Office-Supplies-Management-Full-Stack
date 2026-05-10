@@ -3,6 +3,7 @@
  * ApproveAdjustment.js — Use Case phê duyệt điều chỉnh tồn kho lớn.
  */
 const { NotFoundError, ValidationError, ConflictError } = require('../../domain/errors');
+const { computeMovingAverage } = require('../../domain/rules');
 const { InventoryTransaction } = require('../../domain/entities');
 const { emitTransactionCompleted } = require('../../shared/utils/eventHelper');
 
@@ -43,8 +44,20 @@ class ApproveAdjustment {
         return { status: 'APPROVED', txId: null, realDelta: 0 };
       }
 
+      // [BUG-2] Capture product state for Global Avg (MUST BE BEFORE upsertStock)
+      const product = await this.stockRepo.findProduct(conn, product_id, true);
+      if (!product) throw new NotFoundError('Sản phẩm', product_id);
+
       // 5. Cập nhật warehouse_stock
       await this.stockRepo.upsertStock(conn, warehouse_id, product_id, realDelta, currentAvg);
+
+      // [BUG-2] Update global avg price (Moving Average)
+      const globalNewAvg = product.stock_qty + realDelta > 0
+        ? (realDelta > 0
+          ? computeMovingAverage(product.stock_qty, product.avg_unit_price, realDelta, costPerUnit)
+          : product.avg_unit_price)
+        : 0;
+      await this.stockRepo.updateGlobalAvgPrice(conn, product_id, Math.round(globalNewAvg * 1000000) / 1000000);
 
       // 7. Insert ADJUSTMENT transaction
       const tx = new InventoryTransaction({
@@ -84,7 +97,7 @@ class ApproveAdjustment {
       await this.adjRepo.updateAdjustmentStatus(conn, adjId, { status: 'APPROVED', actorId });
 
       // [BUG-C] Thống nhất dùng type 'ADJUST' thay vì 'ADJUSTMENT'
-      await emitTransactionCompleted('ADJUST', txId, { adjId, delta: realDelta, productId: product_id, warehouseId: warehouse_id });
+      await emitTransactionCompleted('ADJUST', txId, { adjId, delta: realDelta, productId: product_id, warehouseId: warehouse_id }, conn);
 
       return { status: 'APPROVED', txId, realDelta };
     }

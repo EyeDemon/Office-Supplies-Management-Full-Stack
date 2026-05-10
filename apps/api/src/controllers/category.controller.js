@@ -40,7 +40,7 @@ router.get('/', requireLogin, async (req, res, next) => {
 
 router.get('/export', requireLogin, requireManagerOrAdmin, async (req, res, next) => {
   const search = req.query.search;
-  const conn = await db.pool.getConnection();
+  const conn = await db.getConnection();
   try {
     const where  = ['c.deleted = 0'];
     const params = [];

@@ -43,6 +43,18 @@ const attachUserWarehouses = async (req, res, next) => {
     // BUG-08 Fix: Do not grant full access to MANAGER if no warehouses are assigned.
     // Managers must be assigned to warehouses explicitly like Users.
     req.userWarehouseIds = rows.map(r => r.warehouse_id);
+
+    // [BUG-6] Notification for managers with no warehouse assignment
+    if (req.userWarehouseIds.length === 0 && req.session.role === 'MANAGER') {
+      const originalJson = res.json.bind(res);
+      res.json = (data) => {
+        if (data && typeof data === 'object' && !data.error && !data.errors) {
+          data.rbac_warning = 'Bạn chưa được gán quyền truy cập bất kỳ kho nào. Vui lòng liên hệ ADMIN để được phân bổ.';
+        }
+        return originalJson(data);
+      };
+    }
+
     next();
   } catch (e) {
     console.error('[rbac/attachUserWarehouses]', e.message);

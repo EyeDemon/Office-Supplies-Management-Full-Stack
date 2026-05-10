@@ -22,3 +22,5 @@ export const REQUISITION_STATUS = {
   WAREHOUSE_CONFIRMED: 'WAREHOUSE_CONFIRMED',
   CANCELLED: 'CANCELLED',
 };
+
+export const AUTH_DISPLAY_KEY = 'qlvpp_display';

@@ -85,7 +85,7 @@ router.post('/', requireLogin, requireWarehouseOrAdmin, idempotencyCheck, async 
 
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     
     // Generate code with lock
     const d = new Date();
@@ -127,7 +127,7 @@ router.post('/:id/submit', requireLogin, requireWarehouseOrAdmin, idempotencyChe
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const existing = await repo.findTransferForUpdate(conn, id);
     if (!existing) throw new NotFoundError('Phiếu điều chuyển', id);
     assertValidTransition('transfer', existing.status, 'PENDING');
@@ -141,7 +141,7 @@ router.post('/:id/approve', requireLogin, requireWarehouseOrAdmin, idempotencyCh
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const existing = await repo.findTransferForUpdate(conn, id);
     if (!existing) throw new NotFoundError('Phiếu điều chuyển', id);
     assertValidTransition('transfer', existing.status, 'APPROVED');
@@ -156,7 +156,7 @@ router.post('/:id/dispatch', requireLogin, requireWarehouseOrAdmin, idempotencyC
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const tf = await repo.findTransferById(conn, id);
     if (!tf) throw new NotFoundError('Phiếu điều chuyển', id);
     assertValidTransition('transfer', tf.status, 'IN_TRANSIT');
@@ -183,7 +183,7 @@ router.post('/:id/complete', requireLogin, requireWarehouseOrAdmin, idempotencyC
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const tf = await repo.findTransferById(conn, id);
     if (!tf) throw new NotFoundError('Phiếu điều chuyển', id);
     assertValidTransition('transfer', tf.status, 'COMPLETED');
@@ -210,7 +210,7 @@ router.post('/:id/cancel', requireLogin, requireWarehouseOrAdmin, idempotencyChe
   const id = parseInt(req.params.id);
   const conn = await db.getConnection();
   try {
-    await conn.beginTransaction();
+    await db.beginTransactionWithTimeout(conn, 10);
     const tf = await repo.findTransferById(conn, id);
     if (!tf) throw new NotFoundError('Phiếu điều chuyển', id);
     assertValidTransition('transfer', tf.status, 'CANCELLED');

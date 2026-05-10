@@ -1,5 +1,6 @@
 import axios from 'axios';
 import * as apiTypes from '@contracts/api-types';
+import { AUTH_DISPLAY_KEY } from '../shared/constants';
 const { ErrorCode } = apiTypes;
 
 const api = axios.create({
@@ -50,7 +51,7 @@ api.interceptors.response.use(
 
     if (status === 401 || status === 423) {
       clearCsrfToken();
-      localStorage.removeItem('user');
+      localStorage.removeItem(AUTH_DISPLAY_KEY);
       sessionStorage.removeItem('session_verified');
       if (window.location.pathname !== '/login') window.location.href = '/login';
       return Promise.reject(error);

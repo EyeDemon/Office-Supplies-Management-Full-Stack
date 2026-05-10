@@ -49,7 +49,7 @@ jobs:
         env:
           DB_HOST: 127.0.0.1
           DB_USER: root
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD_TEST }}
+          DB_PASSWORD: root_password # Sửa lại cho khớp với MySQL services
           DB_NAME: qlvpp_test
 
       - name: Run unit & integration tests
@@ -59,10 +59,10 @@ jobs:
           NODE_ENV: test
           DB_HOST: 127.0.0.1
           DB_USER: root
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD_TEST }}
+          DB_PASSWORD: root_password # Sửa lại cho khớp với MySQL services
           DB_NAME: qlvpp_test
           REDIS_HOST: localhost
-          SESSION_SECRET: ${{ secrets.SESSION_SECRET_TEST }}
+          SESSION_SECRET: test_secret_key # Có thể dùng chuỗi cứng cho môi trường CI
 
   build:
     name: Build Docker Images

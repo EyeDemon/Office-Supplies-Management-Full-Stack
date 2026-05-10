@@ -1,19 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { Row, Col, Form, Table, Button } from 'react-bootstrap';
+import { Row, Col, Form, Table, Button, Alert } from 'react-bootstrap';
 import { exportOrderAPI, productAPI, userAPI, warehouseAPI } from '@/services/api';
 
 const ExportOrderForm = ({ existing, onSaved, onClose }) => {
   const [recipientName, setRecipient] = useState(existing?.recipient_name || '');
-  const [department, setDept]         = useState(existing?.department || '');
-  const [warehouseId, setWarehouse]   = useState(existing?.warehouse_id || '');
-  const [note, setNote]               = useState(existing?.note || '');
-  const [items, setItems]             = useState([{ productId: '', quantity: 1, note: '' }]);
-  
-  const [products, setProducts]       = useState([]);
+  const [department, setDept] = useState(existing?.department || '');
+  const [warehouseId, setWarehouse] = useState(existing?.warehouse_id || '');
+  const [note, setNote] = useState(existing?.note || '');
+  const [items, setItems] = useState([{ productId: '', quantity: 1, note: '' }]);
+
+  const [products, setProducts] = useState([]);
   const [departments, setDepartments] = useState([]);
-  const [warehouses, setWarehouses]   = useState([]);
-  const [loading, setLoading]         = useState(false);
-  const [saving, setSaving]           = useState(false);
+  const [warehouses, setWarehouses] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   useEffect(() => {
     setLoading(true);
@@ -40,6 +41,7 @@ const ExportOrderForm = ({ existing, onSaved, onClose }) => {
     const validItems = items.filter(i => i.productId && parseInt(i.quantity) > 0);
     if (!validItems.length) return;
     setSaving(true);
+    setError('');
     try {
       const payload = {
         recipientName, department, warehouseId: warehouseId ? parseInt(warehouseId) : null, note,
@@ -48,12 +50,17 @@ const ExportOrderForm = ({ existing, onSaved, onClose }) => {
       if (existing?.id) await exportOrderAPI.update(existing.id, payload);
       else await exportOrderAPI.create(payload);
       onSaved(existing ? 'Cập nhật thành công' : 'Tạo phiếu thành công');
-    } catch (e) { /* error handled by caller */ }
-    finally { setSaving(false); }
+    } catch (e) {
+      const msg = e.response?.data?.message || e.response?.data?.errors?.[0]?.message || 'Lưu thất bại';
+      setError(msg);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
     <Form>
+      {error && <Alert variant="danger" className="py-2 small">{error}</Alert>}
       <Row className="g-3 mb-4">
         <Col md={3}>
           <Form.Label className="small fw-bold">Người nhận</Form.Label>

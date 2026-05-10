@@ -30,6 +30,8 @@ describe('ApproveAdjustment Use-Case', () => {
     };
     stockRepo = {
       findStock: jest.fn().mockResolvedValue({ stock_qty: 100, avg_unit_price: 50000 }),
+      // [FIX] ApproveAdjustment.js calls findProduct for global avg calculation (BUG-2 fix)
+      findProduct: jest.fn().mockResolvedValue({ id: 5, stock_qty: 100, avg_unit_price: 50000 }),
       upsertStock: jest.fn().mockResolvedValue(),
       updateGlobalAvgPrice: jest.fn().mockResolvedValue(),
       insertTransaction: jest.fn().mockResolvedValue(999),
@@ -113,7 +115,7 @@ describe('ProcessReturn Use-Case', () => {
   ];
 
   const mockProd = { id: 10, stock_qty: 100, avg_unit_price: 50000 };
-  const mockWS   = { stock_qty: 80, avg_unit_price: 50000, reserved_quantity: 0 };
+  const mockWS = { stock_qty: 80, avg_unit_price: 50000, reserved_quantity: 0 };
 
   beforeEach(() => {
     jest.resetModules();

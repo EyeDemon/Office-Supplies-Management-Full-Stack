@@ -60,7 +60,7 @@ const escCsv = (v) => {
 
 router.get('/logins/export', requireLogin, requireAdmin, async (req, res, next) => {
   const { w, params } = buildWhere(req.query);
-  const conn = await db.pool.getConnection();
+  const conn = await db.getConnection();
   try {
     const sql = `SELECT l.id, l.username, l.ip_address, l.success, l.user_agent, l.created_at
                  FROM login_audit_log l ${w}
@@ -131,7 +131,7 @@ router.get('/general/entity/:type/:id', requireLogin, requireAdmin, async (req, 
 
 router.get('/general/export', requireLogin, requireAdmin, async (req, res, next) => {
   const { w, params } = buildGeneralWhere(req.query);
-  const conn = await db.pool.getConnection();
+  const conn = await db.getConnection();
   try {
     const sql = `SELECT g.id, g.entity_type, g.entity_id, g.action,
                         u.full_name AS changed_by_name, g.ip_address,

@@ -40,7 +40,7 @@ class OrderRepository {
    */
   async findImportOrderItems(conn, orderId) {
     const [rows] = await conn.query(
-      `SELECT product_id, quantity, unit_price, unit_id, lot_id
+      `SELECT product_id, quantity, unit_price, unit_id, lot_id, total_price
        FROM import_order_items WHERE order_id = ?`,
       [orderId]
     );
@@ -165,8 +165,8 @@ class OrderRepository {
       const qty = parseInt(item.quantity);
       const price = Number(item.unitPrice || 0);
       await conn.query(
-        'INSERT INTO import_order_items (order_id, product_id, quantity, unit_price, total_price) VALUES(?,?,?,?,?)',
-        [orderId, parseInt(item.productId), qty, price, qty * price]
+        'INSERT INTO import_order_items (order_id, product_id, quantity, unit_price, unit_id, lot_id, total_price) VALUES(?,?,?,?,?,?,?)',
+        [orderId, parseInt(item.productId), qty, price, item.unitId || null, item.lotId || null, qty * price]
       );
     }
   }
@@ -401,6 +401,26 @@ class OrderRepository {
       [status, status === 'COMPLETED', userId, status === 'COMPLETED', id]
     );
     return status;
+  }
+
+  async findExportByRequisitionId(conn, requisitionId) {
+    const [[row]] = await conn.query(
+      `SELECT id, order_code, status FROM export_orders WHERE requisition_id = ? LIMIT 1`,
+      [requisitionId]
+    );
+    return row || null;
+  }
+
+  async completeExportWithItems(conn, id, { userId, totalQty, items }) {
+    await conn.query(
+      `UPDATE export_orders 
+       SET status = 'COMPLETED', completed_by = ?, completed_at = NOW(), total_qty = ?, updated_at = NOW()
+       WHERE id = ?`,
+      [userId, totalQty, id]
+    );
+    // Sync items: delete old ones and insert new ones reflecting actual dispense
+    await conn.query('DELETE FROM export_order_items WHERE order_id = ?', [id]);
+    await this.insertExportItems(conn, id, items);
   }
 
   // ══════════════════════════════════════════════════════════════════

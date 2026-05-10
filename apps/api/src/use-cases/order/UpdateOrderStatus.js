@@ -50,10 +50,7 @@ class UpdateOrderStatus {
             : item.quantity;
           reserveItems.push({ productId: item.product_id, quantity: baseQty });
         }
-        const result = await this.reserveUC.execute(conn, { warehouseId: order.warehouse_id, items: reserveItems });
-        if (result.warnings && result.warnings.length > 0) {
-          throw new ValidationError(`Không đủ tồn kho để giữ chỗ: ${result.warnings.map(w => w.message).join('; ')}`);
-        }
+        await this.reserveUC.execute(conn, { warehouseId: order.warehouse_id, items: reserveItems });
       }
       
       // Nếu CANCELLED và trước đó là APPROVED -> Giải phóng giữ chỗ

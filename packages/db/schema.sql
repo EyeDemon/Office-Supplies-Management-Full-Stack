@@ -143,7 +143,7 @@ CREATE TABLE idempotency_keys (
     processed_at    DATETIME       NOT NULL DEFAULT CURRENT_TIMESTAMP,
     expires_at      DATETIME       NOT NULL,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
-    UNIQUE KEY uk_idem (idem_key, user_id),
+    UNIQUE KEY uk_idem (idem_key, (IFNULL(user_id, 0))),
     INDEX idx_idem_key     (idem_key),
     INDEX idx_idem_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
