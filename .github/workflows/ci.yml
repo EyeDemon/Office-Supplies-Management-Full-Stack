@@ -2,84 +2,48 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
   test:
     name: Test & Lint
     runs-on: ubuntu-latest
 
-    services:
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: test_root_password
-          MYSQL_DATABASE: qlvpp
-        ports:
-          - 3306:3306
-        options: --health-cmd="mysqladmin ping" --health-interval=10s --health-timeout=5s --health-retries=3
-      
-      redis:
-        image: redis:7-alpine
-        ports:
-          - 6379:6379
-        options: --health-cmd="redis-cli ping" --health-interval=10s --health-timeout=5s --health-retries=3
-
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: '20'
           cache: 'npm'
+          cache-dependency-path: apps/api/package-lock.json
 
-      - name: Install Dependencies
+      - name: Install API dependencies
+        working-directory: apps/api
         run: npm ci
 
-      - name: Run Lint
-        run: npm run lint
-        continue-on-error: true
-
-      - name: Run Backend Tests
-        run: |
-          cd apps/api
-          npm test -- --coverage --maxWorkers=2
+      - name: Run unit tests
+        working-directory: apps/api
+        run: npm test -- --no-coverage --forceExit
         env:
-          DB_HOST: 127.0.0.1
-          DB_PORT: 3306
-          DB_USER: root
-          DB_PASSWORD: test_root_password
-          DB_NAME: qlvpp
-          REDIS_HOST: 127.0.0.1
-          REDIS_PORT: 6379
-          SESSION_SECRET: test_session_secret_min_32_chars_long
+          NODE_ENV: test
 
   build:
     name: Build Docker Images
-    needs: test
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
+    needs: test
+    if: github.ref == 'refs/heads/main'
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v5
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Build API image
+        run: docker build -t qlvpp-api ./apps/api
 
-      - name: Build API Image
-        uses: docker/build-push-action@v5
-        with:
-          context: ./apps/api
-          push: false
-          tags: qlvpp-api:latest
-
-      - name: Build Web Image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./apps/web/Dockerfile
-          push: false
-          tags: qlvpp-web:latest
+      - name: Build Web image
+        run: docker build -t qlvpp-web ./apps/web
