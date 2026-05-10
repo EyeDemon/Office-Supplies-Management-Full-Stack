@@ -41,7 +41,7 @@ jobs:
 
       - name: Load database schema
         run: |
-          mysql -h 127.0.0.1 -u root -proot_password qlvpp_test < packages/db/schema.sql
+          sed '1,3d' packages/db/schema.sql | mysql -h 127.0.0.1 -u root -proot_password qlvpp_test
 
       - name: Run database migrations
         working-directory: apps/api
