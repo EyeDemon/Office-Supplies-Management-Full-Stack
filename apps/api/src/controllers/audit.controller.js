@@ -8,37 +8,42 @@ const db     = require('../shared/config/db');
 const repo   = require('../infrastructure/repositories/AuditRepository');
 const { requireLogin, requireAdmin, parsePage } = require('../shared/middleware/authenticate');
 const { streamToCsv } = require('../shared/utils/csv/csvStream');
+const { buildSafeWhere } = require('../shared/utils/queryHelper');
 const { ValidationError } = require('../domain/errors');
 
 function buildWhere(query) {
-  const where  = [];
-  const params = [];
-  if (query.username?.trim())    { where.push('l.username LIKE ?');      params.push(`%${query.username.trim()}%`); }
-  if (query.success === 'true')  { where.push('l.success = 1'); }
-  if (query.success === 'false') { where.push('l.success = 0'); }
-  if (query.dateFrom)            { where.push('DATE(l.created_at) >= ?'); params.push(query.dateFrom); }
-  if (query.dateTo)              { where.push('DATE(l.created_at) <= ?'); params.push(query.dateTo); }
-  return { w: where.length ? 'WHERE ' + where.join(' AND ') : '', params };
+  const whitelist = {
+    username: { field: 'l.username', operator: 'LIKE' },
+    success:  { field: 'l.success', transform: v => v === 'true' ? 1 : 0 },
+    dateFrom: { field: 'DATE(l.created_at)', operator: '>=' },
+    dateTo:   { field: 'DATE(l.created_at)', operator: '<=' }
+  };
+  return buildSafeWhere(query, whitelist);
 }
 
 function buildGeneralWhere(query) {
-  const where = []; const params = [];
-  if (query.entityType?.trim()) { where.push('g.entity_type = ?');       params.push(query.entityType.trim()); }
-  if (query.entityId)           { where.push('g.entity_id = ?');         params.push(parseInt(query.entityId)); }
-  if (query.action?.trim())     { where.push('g.action = ?');            params.push(query.action.trim().toUpperCase()); }
+  const whitelist = {
+    entityType: { field: 'g.entity_type' },
+    entityId:   { field: 'g.entity_id', transform: v => parseInt(v) },
+    action:     { field: 'g.action', transform: v => v.toUpperCase() },
+    dateFrom:   { field: 'DATE(g.created_at)', operator: '>=' },
+    dateTo:     { field: 'DATE(g.created_at)', operator: '<=' }
+  };
+  
+  // Xử lý đặc biệt cho changedBy (có thể là ID hoặc username)
+  const result = buildSafeWhere(query, whitelist);
   if (query.changedBy?.trim()) {
     const cb = query.changedBy.trim();
+    const prefix = result.w ? ' AND ' : 'WHERE ';
     if (/^\d+$/.test(cb)) {
-      where.push('g.changed_by = ?');
-      params.push(parseInt(cb));
+      result.w += `${prefix}g.changed_by = ?`;
+      result.params.push(parseInt(cb));
     } else {
-      where.push('u.username LIKE ?');
-      params.push(`%${cb}%`);
+      result.w += `${prefix}u.username LIKE ?`;
+      result.params.push(`%${cb}%`);
     }
   }
-  if (query.dateFrom)           { where.push('DATE(g.created_at) >= ?'); params.push(query.dateFrom); }
-  if (query.dateTo)             { where.push('DATE(g.created_at) <= ?'); params.push(query.dateTo); }
-  return { w: where.length ? 'WHERE ' + where.join(' AND ') : '', params };
+  return result;
 }
 
 const esc = (v) => {

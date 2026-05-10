@@ -8,7 +8,7 @@ services:
       resources:
         limits:
           cpus: '0.5'
-          memory: 512M
+          memory: 1G
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env}
       MYSQL_DATABASE: qlvpp
@@ -16,7 +16,6 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Set MYSQL_PASSWORD in .env}
     volumes:
       - qlvpp_db_data:/var/lib/mysql
-      # v4.0.0 Golden Schema — 39 tables, triggers, views, seed (no migration cruft)
       - ./packages/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
       - ./packages/db/seeds/seed_v4.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
     ports:
@@ -46,11 +45,11 @@ services:
     ports:
       - "6379:6379"
     healthcheck:
-      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD}", "ping" ]
+      test: [ "CMD", "redis-cli", "-a", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}", "ping" ]
       interval: 10s
       timeout: 5s
       retries: 5
-    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD}" ]
+    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}" ]
     logging:
       driver: "json-file"
       options:
@@ -67,7 +66,7 @@ services:
     deploy:
       resources:
         limits:
-          cpus: '0.5'
+          cpus: '1.0'
           memory: 512M
     depends_on:
       db:
@@ -111,7 +110,7 @@ services:
         max-size: "10m"
         max-file: "3"
 
-  # ── React Frontend — Nginx (apps/web/) ──────────────────────────
+  # ── React Frontend (apps/web/) ──────────────────────────
   web:
     build:
       context: .
@@ -123,8 +122,8 @@ services:
         limits:
           cpus: '0.2'
           memory: 128M
-    ports:
-      - "80:80"
+    expose:
+      - "80"
     depends_on:
       api:
         condition: service_healthy
@@ -133,7 +132,33 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ── Caddy Gateway (Auto-HTTPS & Reverse Proxy) ────────────────────
+  gateway:
+    image: caddy:2.7-alpine
+    container_name: qlvpp-gateway
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile
+      - caddy_data:/data
+      - caddy_config:/config
+    environment:
+      DOMAIN: ${DOMAIN:-localhost}
+      ACME_EMAIL: ${ACME_EMAIL:-admin@example.com}
+    depends_on:
+      web:
+        condition: service_healthy
+      api:
+        condition: service_healthy
     logging:
       driver: "json-file"
       options:
@@ -141,13 +166,15 @@ services:
         max-file: "3"
 
   # ── DB Backup (Cron hàng ngày lúc 2:00 AM) ──────────────────────
-  # Lưu file vào named volume qlvpp_backups, giữ trong 7 ngày.
-  # Xem danh sách: docker run --rm -v qlvpp_backups:/b alpine ls /b
-  # Restore:       docker run --rm -v qlvpp_backups:/b -v $(pwd):/out alpine cp /b/<file>.sql.gz /out/
   backup:
     image: mysql:8.0
     container_name: qlvpp-backup
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
     depends_on:
       db:
         condition: service_healthy
@@ -168,38 +195,13 @@ services:
         echo '[Backup] Đã đăng ký cron 02:00 AM hàng ngày.' &&
         cron -f
       "
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "5m"
-        max-file: "2"
-
-  # ── Certbot / Let's Encrypt ───────────────────────────────────────
-  # Chạy một lần để lấy cert HTTPS:
-  #   DOMAIN=yourdomain.com CERTBOT_EMAIL=you@email.com \
-  #   docker compose --profile certbot run --rm certbot
-  # Sau đó: uncomment HTTPS section trong docker-compose và dùng nginx.https.conf
-  certbot:
-    image: certbot/certbot:latest
-    container_name: qlvpp-certbot
-    profiles: ["certbot"]
-    volumes:
-      - certbot_certs:/etc/letsencrypt
-      - certbot_www:/var/www/certbot
-    command: >
-      certonly --webroot
-      --webroot-path=/var/www/certbot
-      --email ${CERTBOT_EMAIL:-admin@example.com}
-      --agree-tos
-      --no-eff-email
-      -d ${DOMAIN:-yourdomain.com}
 
 volumes:
   qlvpp_db_data:
     driver: local
   qlvpp_backups:
     driver: local
-  certbot_certs:
+  caddy_data:
     driver: local
-  certbot_www:
+  caddy_config:
     driver: local

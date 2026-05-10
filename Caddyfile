@@ -1,0 +1,34 @@
+{
+    # Email để nhận thông báo từ Let's Encrypt
+    email {$ACME_EMAIL:admin@example.com}
+}
+
+# Thay 'yourdomain.com' bằng tên miền thực tế của bạn hoặc dùng :80, :443
+{$DOMAIN:localhost} {
+    # Nén dữ liệu
+    encode zstd gzip
+
+    # Proxy cho Backend API
+    handle_path /api/* {
+        reverse_proxy api:8080
+    }
+
+    # Proxy cho Frontend
+    handle {
+        reverse_proxy web:80
+    }
+
+    # Bảo mật Headers
+    header {
+        # HSTS (6 tháng)
+        Strict-Transport-Security "max-age=15768000;"
+        X-Content-Type-Options nosniff
+        X-Frame-Options DENY
+        Referrer-Policy no-referrer-when-downgrade
+    }
+
+    # Logging
+    log {
+        output file /var/log/caddy/access.log
+    }
+}
