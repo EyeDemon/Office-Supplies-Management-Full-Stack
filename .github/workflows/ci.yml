@@ -41,7 +41,8 @@ jobs:
 
       - name: Load database schema
         run: |
-          sed '1,3d' packages/db/schema.sql | mysql -h 127.0.0.1 -u root -proot_password qlvpp_test
+          sed -e '/DROP DATABASE/d' -e '/CREATE DATABASE/d' -e '/^USE /d' -e '/^USE`/d' packages/db/schema.sql | mysql -h 127.0.0.1 -u root -proot_password qlvpp_test
+          mysql -h 127.0.0.1 -u root -proot_password -e "SHOW TABLES;" qlvpp_test
 
       - name: Run database migrations
         working-directory: apps/api
