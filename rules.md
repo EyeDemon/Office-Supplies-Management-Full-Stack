@@ -1,0 +1,3 @@
+- Luôn tự động thực thi các lệnh an toàn (Auto-execute).
+- Chỉ được phép thao tác (tạo/sửa/xóa) file trong thư mục hiện tại.
+- Không yêu cầu phê duyệt cho các lệnh commit hoặc refactor.
